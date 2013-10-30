@@ -298,10 +298,6 @@ else:
     import argparse
     from webassets.script import GenericArgparseImplementation, CommandError
 
-    class CatchAllParser(object):
-        def parse_known_args(self, app_args):
-            return argparse.Namespace(), app_args
-
     class FlaskArgparseInterface(GenericArgparseImplementation):
         """Subclass the CLI implementation to add a --parse-templates option."""
 
@@ -348,38 +344,29 @@ else:
 
             return Jinja2Loader(env, template_dirs, [jinja2_env]).load_bundles()
 
-    class ManageAssets(script.Command):
-        """Manage assets."""
-        capture_all_args = True
+    from flask import current_app
 
-        def __init__(self, assets_env=None, impl=FlaskArgparseInterface,
-                     log=None):
-            self.env = assets_env
-            self.implementation = impl
-            self.log = log
+    AssetsCommand = script.Manager(usage = 'Execute webassets commands')
 
-        def create_parser(self, prog):
-            return CatchAllParser()
+    @AssetsCommand.command
+    def watch():
+        impl = FlaskArgparseInterface(current_app.jinja_env.assets_environment)
+        impl.main(['watch'])
 
-        def run(self, args):
-            """Runs the management script.
-            If ``self.env`` is not defined, it will import it from
-            ``current_app``.
-            """
+    @AssetsCommand.command
+    def check():
+        impl = FlaskArgparseInterface(current_app.jinja_env.assets_environment)
+        impl.main(['check'])
 
-            if not self.env:
-                from flask import current_app
-                self.env = current_app.jinja_env.assets_environment
+    @AssetsCommand.command
+    def build():
+        impl = FlaskArgparseInterface(current_app.jinja_env.assets_environment)
+        impl.main(['build'])
 
-            # Determine 'prog' - something like for example
-            # "./manage.py assets", to be shown in the help string.
-            # While we don't know the command name we are registered with
-            # in Flask-Assets, we are lucky to be able to rely on the
-            # name being in argv[1].
-            import sys, os.path
-            prog = '%s %s' % (os.path.basename(sys.argv[0]), sys.argv[1])
+    @AssetsCommand.command
+    def clean():
+        impl = FlaskArgparseInterface(current_app.jinja_env.assets_environment)
+        impl.main(['clean'])
 
-            impl = self.implementation(self.env, prog=prog, log=self.log)
-            impl.main(args)
 
-    __all__ = __all__ + ('ManageAssets',)
+    __all__ = __all__ + ('AssetsCommand',)

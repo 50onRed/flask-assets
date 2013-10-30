@@ -15,11 +15,11 @@ from setuptools import setup
 # module, though that requires dependencies to be already installed,
 # which may not be the case when processing a pip requirements
 # file, for example.
-def parse_version(asignee):
+def parse_version(assignee):
     import os, re
     here = os.path.dirname(os.path.abspath(__file__))
     version_re = re.compile(
-        r'__version__ = (\(.*?\))')
+        r'{} = (\(.*?\))'.format(assignee))
     with open(os.path.join(here, 'src', 'flask_assets.py')) as fp:
         for line in fp:
             match = version_re.search(line)

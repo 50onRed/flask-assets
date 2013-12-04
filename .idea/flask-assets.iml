@@ -7,7 +7,7 @@
       <excludeFolder url="file://$MODULE_DIR$/build" />
       <excludeFolder url="file://$MODULE_DIR$/dist" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 2.7.2 virtualenv at ~/.virtualenvs/flask-assets" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 2.7.5 virtualenv at ~/.virtualenvs/flask-assets" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

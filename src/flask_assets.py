@@ -1,4 +1,4 @@
-from __future__ import with_statement
+from __future__ import print_function
 from os import path
 from flask import _request_ctx_stack, url_for
 from flask.templating import render_template_string
@@ -8,8 +8,8 @@ from webassets.filter import Filter, register_filter
 from webassets.loaders import PythonLoader, YAMLLoader
 
 
-__version__ = (0, 8, 2)
-__webassets_version__ = ('0', '8', '2') # webassets core compatibility. used in setup.py
+__version__ = (0, 10, 'dev')
+__webassets_version__ = ('dev',)  # webassets core compatibility. used in setup.py
 
 
 __all__ = ('Environment', 'Bundle',)
@@ -24,6 +24,7 @@ class Jinja2Filter(Filter):
     Flask contexts.
     """
     name = 'jinja2'
+    max_debug_level = None
 
     def __init__(self, context=None):
         super(Jinja2Filter, self).__init__()
@@ -199,12 +200,17 @@ class FlaskResolver(Resolver):
         filename = item
         if hasattr(self.env._app, 'blueprints'):
             try:
-                blueprint, name = item.split('/', 1)
-                self.env._app.blueprints[blueprint]  # keyerror if no module
-                endpoint = '%s.static' % blueprint
-                filename = name
-            except (ValueError, KeyError):
-                endpoint = 'static'
+                from flask.ext.s3 import url_for
+            except ImportError as e:
+                print("You must have Flask S3 to use FLASK_ASSETS_USE_S3 option")
+                raise e
+        else:
+            from flask import url_for
+
+        directory, rel_path, endpoint = self.split_prefix(item)
+
+        if filepath is not None:
+            filename = filepath[len(directory)+1:]
         else:
             # Module support for Flask < 0.7
             try:
@@ -283,12 +289,14 @@ class Environment(BaseEnvironment):
     def from_yaml(self, path):
         """Register bundles from a YAML configuration file"""
         bundles = YAMLLoader(path).load_bundles()
-        [self.register(name, bundle) for name, bundle in bundles.iteritems()]
+        for name in bundles:
+            self.register(name, bundles[name])
 
     def from_module(self, path):
         """Register bundles from a Python module"""
         bundles = PythonLoader(path).load_bundles()
-        [self.register(name, bundle) for name, bundle in bundles.iteritems()]
+        for name in bundles:
+            self.register(name, bundles[name])
 
 try:
     from flask.ext import script
@@ -305,6 +313,9 @@ else:
             super(FlaskArgparseInterface, self).\
                 _construct_parser(*a, **kw)
             self.parser.add_argument(
+                '--jinja-extension', default='*.html',
+                help='specify the glob pattern for Jinja extensions (default: *.html)')
+            self.parser.add_argument(
                 '--parse-templates', action='store_true',
                 help='search project templates to find bundles')
 
@@ -316,7 +327,7 @@ else:
                     # Note that we exclude container bundles. By their very nature,
                     # they are guaranteed to have been created by solely referencing
                     # other bundles which are already registered.
-                    env.add(*[b for b in self.load_from_templates(env)
+                    env.add(*[b for b in self.load_from_templates(env, ns.jinja_extension)
                                     if not b.is_container])
 
                 if not len(env):
@@ -327,7 +338,7 @@ else:
                         '--parse-templates option.')
             return env
 
-        def load_from_templates(self, env):
+        def load_from_templates(self, env, jinja_extension):
             from webassets.ext.jinja2 import Jinja2Loader, AssetsExtension
             from flask import current_app as app
 
@@ -342,31 +353,38 @@ else:
                 template_dirs.append(
                     path.join(blueprint.root_path, blueprint.template_folder))
 
-            return Jinja2Loader(env, template_dirs, [jinja2_env]).load_bundles()
+            return Jinja2Loader(env, template_dirs, [jinja2_env], jinja_ext=jinja_extension).\
+                load_bundles()
 
-    from flask import current_app
+    class ManageAssets(script.Command):
+        """Manage assets."""
+        capture_all_args = True
 
-    AssetsCommand = script.Manager(usage = 'Execute webassets commands')
+        def __init__(self, assets_env=None, impl=FlaskArgparseInterface,
+                     log=None):
+            self.env = assets_env
+            self.implementation = impl
+            self.log = log
 
-    @AssetsCommand.command
-    def watch():
-        impl = FlaskArgparseInterface(current_app.jinja_env.assets_environment)
-        impl.main(['watch'])
+        def run(self, args):
+            """Runs the management script.
+            If ``self.env`` is not defined, it will import it from
+            ``current_app``.
+            """
 
-    @AssetsCommand.command
-    def check():
-        impl = FlaskArgparseInterface(current_app.jinja_env.assets_environment)
-        impl.main(['check'])
+            if not self.env:
+                from flask import current_app
+                self.env = current_app.jinja_env.assets_environment
 
-    @AssetsCommand.command
-    def build():
-        impl = FlaskArgparseInterface(current_app.jinja_env.assets_environment)
-        impl.main(['build'])
+            # Determine 'prog' - something like for example
+            # "./manage.py assets", to be shown in the help string.
+            # While we don't know the command name we are registered with
+            # in Flask-Assets, we are lucky to be able to rely on the
+            # name being in argv[1].
+            import sys, os.path
+            prog = '%s %s' % (os.path.basename(sys.argv[0]), sys.argv[1])
 
-    @AssetsCommand.command
-    def clean():
-        impl = FlaskArgparseInterface(current_app.jinja_env.assets_environment)
-        impl.main(['clean'])
+            impl = self.implementation(self.env, prog=prog, log=self.log)
+            impl.main(args)
 
-
-    __all__ = __all__ + ('AssetsCommand',)
+    __all__ = __all__ + ('ManageAssets',)
